@@ -48,9 +48,7 @@ socket.on('stop', () => {
     if (webRtcPeer) {
 		webRtcPeer.dispose();
 		webRtcPeer = null;
-        remoteVideo.srcObject = null;
-        socket.close();
-        socket = null;
+        remoteVideo.srcObject = null;        
 	}
 })
 /**
