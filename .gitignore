@@ -1,3 +1,4 @@
 node_modules/
 build/
 static/bower_components
+package-lock.json

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViVi</title>
+    <link rel="stylesheet" href="/public/style.css">
+
+    <script src="/bower_components/webrtc-adapter/release/adapter.js"></script>
+    <script src="/bower_components/kurento-utils/js/kurento-utils.js"></script>
+    <script src="/bower_components/socket.io/client-dist/socket.io.js"></script>    
+    <script src="https://kit.fontawesome.com/c939d0e917.js"></script>
+    <script>
+        const ROOM_ID = "<%= roomId %>";        
+    </script>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <h3>Video chat</h3>
+        </div>
+    </div>
+    <div class="main">
+        <div class="main-left">
+            <div class="videos-group">
+                <div id="video-grid">
+
+                </div>
+            </div>
+            <div class="options">
+                <div class="options-left">
+                    <div id="start-stream" class="options-button">
+                        <i class="fa fa-play"></i>
+                    </div>
+                    <div id="stop-stream" class="options-button">
+                        <i class="fa fa-stop"></i>
+                    </div>
+                    <!-- <div id="stop-video" class="options-button">
+                        <i class="fa fa-video-camera"></i>
+                    </div>
+                    <div id="mute-button" class="options-button">
+                        <i class="fa fa-microphone"></i>
+                    </div> -->
+                </div>
+                <div class="options-right">
+                    <div id="invite-button" class="options-button">
+                        <i class="fas fa-user-plus"></i>
+                    </div>
+                </div>
+            </div>   
+        </div>
+        <div class="main-right">
+            <div class="main-chat-window">
+                <div class="messages">
+
+                </div>
+            </div>
+            <div class="main-message-container">
+                <input type="text" id="chat-message" autocomplete="off" placeholder="Type message here...">
+                <div id="send" class="options-button">
+                    <i class="fa fa-plus" aria-hidden="true"></i>
+                </div>
+            </div>
+        </div>       
+    </div>
+    <script src='/public/viewer.js'></script>
+</body>
+</html>

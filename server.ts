@@ -4,12 +4,24 @@ import { Server, Socket } from 'socket.io';
 import * as kurento from 'kurento-client';
 import path from 'path';
 import { ClientInstance, MediaPipeline, WebRtcEndpoint } from 'kurento-client';
+import { v4 as uuidV4 } from 'uuid';
 
+type Participant = {
+    type: Actor,
+    socket: Socket,
+    rtcEndpoint: WebRtcEndpoint
+}
 type Room = {
-    id: string; //socket id
-    pipeline: MediaPipeline;
-    webRtcEndpoint: WebRtcEndpoint;
+    id: string; //room id
+    pipeline: MediaPipeline;    
+    participants: Record<string, Participant>;
+    broadcaster: Participant;
 };
+
+enum Actor {
+    BROADCASTER = 'Broadcaster',
+    VIEWER = 'Viewer'
+}
 /**
  * Declaration
  */
@@ -25,10 +37,24 @@ const iceCandidates: Record<string, RTCIceCandidate[]> = {};
 /**
  * Express
  */
+app.set('view engine', 'ejs');
 app.use(express.static(path.join(__dirname, 'static')));
 
-app.get("/", (req, res) => {    
-    res.sendFile('index.html');   
+//route
+app.get("/broadcaster", (req, res) => {
+    res.redirect(`/broadcaster/${uuidV4()}`);
+});
+  
+app.get("/broadcaster/:room", (req, res) => {
+    res.render("room_broadcaster", { roomId: req.params.room });
+});
+
+app.get("/viewer", (req, res) => {
+    res.redirect(`/viewer/${uuidV4()}`);
+});
+  
+app.get("/viewer/:room", (req, res) => {
+    res.render("room_viewer", { roomId: req.params.room });
 });
 
 /**
@@ -36,19 +62,16 @@ app.get("/", (req, res) => {
  */
 io.on('connection', (socket: Socket) => {
     console.log('Client connected: ', socket.id);
-    socket.on('offer', async ({offer}) => {
+    socket.on('join-room', async (roomId) => {
+        socket.join(roomId);
+        createRoom(roomId);
+    });
+    socket.on('offer', async ({offer, type, roomId}) => {        
         try { 
-            if(!rooms[socket.id]) {
-                const pipeline: MediaPipeline = await createPipeline();
-                const webRtcEndpoint: WebRtcEndpoint = await pipeline.create('WebRtcEndpoint');                
-                rooms[socket.id] = {
-                    id: socket.id,
-                    pipeline: pipeline,
-                    webRtcEndpoint: webRtcEndpoint
-                }
-                ;
+            if(!rooms[roomId]) {
+               await createRoom(roomId);
             }
-            const webRtcEndpoint = rooms[socket.id].webRtcEndpoint;
+            const webRtcEndpoint = await rooms[roomId].pipeline.create('WebRtcEndpoint');
             //offer & answer
             console.log('Process offer');   
             const answer = await webRtcEndpoint.processOffer(offer);
@@ -73,22 +96,26 @@ io.on('connection', (socket: Socket) => {
                     return console.log(error);
                 }
             }); 
-            //connect         
-            await webRtcEndpoint.connect(webRtcEndpoint);
+            const participant: Participant = {
+                type: type,
+                socket: socket,
+                rtcEndpoint: webRtcEndpoint,
+            };
+            rooms[roomId].participants[socket.id] = participant;
+            //connect 
+            connectOneToMany(roomId, participant);
         } catch (err) {
             console.log(err);
         }        
     });
-    socket.on('icecandidate', ({candidate}) => {
-        onIceCandidate(socket.id, candidate)
+    socket.on('icecandidate', ({candidate, roomId}) => {
+        onIceCandidate(roomId, socket.id, candidate)
     });
-    socket.on('stop', () => {
-        if(rooms[socket.id]) {
-            stop(socket.id);
-        }
+    socket.on('stop', ({roomId, type}) => {
+        stop(roomId, type, socket);
     });
     socket.on('disconnect', () => {
-        stop(socket.id);
+        disconnect(socket); 
     });
 });
 
@@ -107,36 +134,94 @@ const getKurentoClient = (): Promise<ClientInstance> => {
     return kurento.getSingleton(WS);
 }
 
-const createPipeline = async (): Promise<MediaPipeline> => {
-    const kurentoClient: ClientInstance = await getKurentoClient();
-    console.log('Create pipeline');
-    return kurentoClient.create('MediaPipeline');
+const createPipeline = async (): Promise<MediaPipeline> => {    
+        const kurentoClient: ClientInstance = await getKurentoClient();
+        console.log('Create pipeline');
+        return kurentoClient.create('MediaPipeline'); 
 }
 
-const onIceCandidate = (roomId: string, _candidate: any) => {
+const createRoom = async (roomId: string) => {
+    if(rooms[roomId]) return;
+    const pipeline: MediaPipeline = await createPipeline();
+    rooms[roomId] = {
+        id: roomId,
+        pipeline: pipeline,
+        participants: {},
+        // @ts-ignore
+        broadcaster: {},
+    };
+
+}
+
+const onIceCandidate = (roomId: string, socketId: string, _candidate: any) => {
     const candidate = kurento.getComplexType('IceCandidate')(_candidate);
 
-    if (rooms[roomId]) {
+    if (rooms[roomId] && rooms[roomId].participants[socketId]) {
         console.info('Add candidate');
-        const webRtcEndpoint = rooms[roomId].webRtcEndpoint;
+        const webRtcEndpoint = rooms[roomId].participants[socketId].rtcEndpoint;
         webRtcEndpoint.addIceCandidate(candidate);
     }
     else {
         console.info('Queueing candidate');
-        if (!iceCandidates[roomId]) {
-            iceCandidates[roomId] = [];
+        if (!iceCandidates[socketId]) {
+            iceCandidates[socketId] = [];
         }
-        iceCandidates[roomId].push(candidate);
+        iceCandidates[socketId].push(candidate);
     }
 }
 
-const stop = (roomId: string) => {    
-    if(rooms[roomId]) {
-        console.log('Delete room: ', roomId);
-        rooms[roomId].webRtcEndpoint.release();
-        rooms[roomId].pipeline.release();
-        delete rooms[roomId];
-        delete iceCandidates[roomId];
+const connectOneToMany = async (roomId: string, participantJoin: Participant) => {
+    const participants = rooms[roomId].participants;
+    const keyOfParticipants = Object.keys(participants);
+    if(participantJoin.type == Actor.BROADCASTER){
+        rooms[roomId].broadcaster = participantJoin;
+        if(keyOfParticipants.length > 1) {
+            keyOfParticipants.forEach(key => {
+                const participant: Participant = participants[key];
+                if(participant.type == Actor.VIEWER){
+                    rooms[roomId].broadcaster.rtcEndpoint.connect(participant.rtcEndpoint);
+                }
+            });
+        }
+    }
+    if(participantJoin.type == Actor.VIEWER && rooms[roomId].broadcaster) {
+        rooms[roomId].broadcaster.rtcEndpoint.connect(participantJoin.rtcEndpoint);
+    }
+}
+
+const stop = (roomId: string, type: string, socket: Socket) => {    
+    if(rooms[roomId]){
+        if(type === Actor.BROADCASTER) {
+            rooms[roomId].pipeline.release();
+            rooms[roomId].broadcaster.rtcEndpoint.release();
+            Object.keys(rooms[roomId].participants).forEach(key => {
+                rooms[roomId].participants[key].rtcEndpoint.release();
+                delete rooms[roomId].participants[key];
+            });
+            console.log('Delete room: ', roomId);
+            delete rooms[roomId];
+            socket.to(roomId).emit('stop');
+        }
+        if(type === Actor.VIEWER) {
+            rooms[roomId].participants[socket.id].rtcEndpoint.release();
+            delete rooms[roomId].participants[socket.id];
+        }
+    }
+}
+
+const disconnect = (socket: Socket) => {
+    for(let key in rooms) {
+        if(rooms[key].participants[socket.id]) {
+            if(rooms[key].participants[socket.id].type == Actor.BROADCASTER) {
+                rooms[key].broadcaster.rtcEndpoint.release();
+            }
+            rooms[key].participants[socket.id].rtcEndpoint.release();
+            delete rooms[key].participants[socket.id];
+            if(Object.keys(rooms[key].participants).length == 0) {
+                console.log('Delete room: ', key);
+                delete rooms[key];
+            }
+        }
     }
 }
 
