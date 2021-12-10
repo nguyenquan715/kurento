@@ -212,15 +212,8 @@ const stop = (roomId: string, type: string, socket: Socket) => {
 const disconnect = (socket: Socket) => {
     for(let key in rooms) {
         if(rooms[key].participants[socket.id]) {
-            if(rooms[key].participants[socket.id].type == Actor.BROADCASTER) {
-                rooms[key].broadcaster.rtcEndpoint.release();
-            }
-            rooms[key].participants[socket.id].rtcEndpoint.release();
-            delete rooms[key].participants[socket.id];
-            if(Object.keys(rooms[key].participants).length == 0) {
-                console.log('Delete room: ', key);
-                delete rooms[key];
-            }
+            stop(key, rooms[key].participants[socket.id].type, socket);
+            return;
         }
     }
 }

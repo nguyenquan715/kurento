@@ -1,8 +1,3 @@
-const socket = io();
-const constraints = {
-    video: true,
-    audio: true,
-};
 var webRtcPeer;
 var videoGrid;
 var localVideo;
@@ -17,11 +12,11 @@ window.onload = () => {
     videoGrid.append(localVideo);
     startBtn = document.getElementById('start-stream');
     startBtn.onclick = () => {
-        start();
+        startSend();
     }  
     stopBtn = document.getElementById('stop-stream');
     stopBtn.onclick = () => {
-        stop();
+        stopCall(webRtcPeer, localVideo, 'Broadcaster');
     }  
 }
 
@@ -48,7 +43,7 @@ socket.on('icecandidate', (candidate) => {
 /**
  * Function
  */
-const start = async () => {    
+const startSend = async () => {    
     console.log('Starting video stream ...')	
 
 	console.log('Creating WebRtcPeer and generating local sdp offer ...');
@@ -61,41 +56,11 @@ const start = async () => {
 
     webRtcPeer = kurentoUtils.WebRtcPeer.WebRtcPeerSendonly(options, function(error) {
         if(error) return console.error(error);
-        this.generateOffer(onOffer);
+        this.generateOffer((error, offer) => {
+            onOffer(error, offer, 'Broadcaster');
+        });
         this.peerConnection.onconnectionstatechange = () => {
             console.log('Connection state: ', this.peerConnection.connectionState);
         }
-    });
-}
-
-const stop = () => {
-    console.log('Stopping video stream ...');	
-	if (webRtcPeer) {
-		webRtcPeer.dispose();
-		webRtcPeer = null;
-        localVideo.srcObject = null;
-	}
-	socket.emit('stop', {
-        type: 'Broadcaster',
-        roomId: ROOM_ID
-    });
-}
-
-const onIceCandidate = (candidate) => { 
-    console.log('On candidate');
-    socket.emit('icecandidate', {
-        candidate: candidate,        
-        roomId: ROOM_ID
-    });
-}
-
-const onOffer = (error, offerSdp) => {
-	if(error) return console.log(error);
-
-	console.info('Invoking SDP offer callback function ' + location.host);
-	socket.emit('offer', {
-        offer: offerSdp,
-        type: 'Broadcaster',
-        roomId: ROOM_ID
     });
 }

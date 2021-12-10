@@ -1,8 +1,3 @@
-const socket = io();
-const constraints = {
-    video: true,
-    audio: true,
-};
 var webRtcPeer;
 var videoGrid;
 var remoteVideo;
@@ -17,11 +12,11 @@ window.onload = () => {
     videoGrid.append(remoteVideo);
     startBtn = document.getElementById('start-stream');
     startBtn.onclick = () => {
-        start();
+        startRecv();
     }
     stopBtn = document.getElementById('stop-stream');
     stopBtn.onclick = () => {
-        stop();
+        stopCall(webRtcPeer, remoteVideo, 'Viewer');
     }  
 }
 
@@ -54,7 +49,7 @@ socket.on('stop', () => {
 /**
  * Function
  */
-const start = async () => {    
+const startRecv = async () => {    
     console.log('Starting receive stream ...')	
 
 	console.log('Creating WebRtcPeer and generating local sdp offer ...');
@@ -67,41 +62,11 @@ const start = async () => {
 
     webRtcPeer = kurentoUtils.WebRtcPeer.WebRtcPeerRecvonly(options, function(error) {
         if(error) return console.error(error);
-        this.generateOffer(onOffer);
+        this.generateOffer((error, offer) => {
+            onOffer(error, offer, 'Viewer');
+        });
         this.peerConnection.onconnectionstatechange = () => {
             console.log('Connection state: ', this.peerConnection.connectionState);
         }
-    });
-}
-
-const stop = () => {
-    console.log('Stopping stream ...');	
-	if (webRtcPeer) {
-		webRtcPeer.dispose();
-		webRtcPeer = null;
-        remoteVideo.srcObject = null;
-	}
-	socket.emit('stop', {
-        type: 'Viewer',
-        roomId: ROOM_ID
-    });
-}
-
-const onIceCandidate = (candidate) => { 
-    console.log('On candidate');
-    socket.emit('icecandidate', {
-        candidate: candidate,       
-        roomId: ROOM_ID
-    });
-}
-
-const onOffer = (error, offerSdp) => {
-	if(error) return console.log(error);
-
-	console.info('Invoking SDP offer callback function ' + location.host);
-	socket.emit('offer', {
-        offer: offerSdp,
-        type: 'Viewer',
-        roomId: ROOM_ID
     });
 }
